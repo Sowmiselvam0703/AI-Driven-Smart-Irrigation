@@ -1,206 +1,114 @@
-//e2637iot@awgarstone.com
-//Info@2024
+from ultralytics import YOLO
+import cv2
+import math
+import serial
+import time
+import requests
+import base64
+import json
+import numpy as np
+from blynklib import Blynk
 
-#define BLYNK_TEMPLATE_ID "TMPL3CZk8Eegs"
-#define BLYNK_TEMPLATE_NAME "ANIMAL DETECTED"
-#define BLYNK_AUTH_TOKEN "vB-UzWHaX7ttbrx_xSEbc2_lT_KK6l4f"
+#https://blynk.cloud/external/api/update?token=vB-UzWHaX7ttbrx_xSEbc2_lT_KK6l4f&V1=
+BLYNK_SERVER = "https://blynk.cloud"
+BLYNK_AUTH_TOKEN = "vB-UzWHaX7ttbrx_xSEbc2_lT_KK6l4f"
+VIRTUAL_PIN = 1
 
-char auth[] = BLYNK_AUTH_TOKEN;
+def update_data_to_blynk(value):
+    iot_url = f"{BLYNK_SERVER}/external/api/update?token={BLYNK_AUTH_TOKEN}&V{VIRTUAL_PIN}={value}"
 
-#define BLYNK_PRINT Serial
-#include <ESP8266WiFi.h>
-#include <BlynkSimpleEsp8266.h>
+    try:
+        response = requests.get(iot_url)
+        if response.status_code == 200:
+            print("Data sent successfully to Blynk.")
+        else:
+            print(f"Failed to send data to Blynk. Status code: {response.status_code}")
+    except Exception as e:
+        print(f"Error: {e}")
 
-#include <LCD_I2C.h>
-LCD_I2C lcd(0x3F);
+# Load pre-trained model for object detection (e.g., Haarcascades for simplicity)
+face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
 
-#include "DHT.h"    // including the library of DHT11 temperature and humidity sensor
-#define DHTPIN D7 // Selecting the pin at which we have connected DHT11
-#define DHTTYPE DHT11 // Selecting the type of DHT sensors
-DHT dht ( DHTPIN, DHTTYPE ) ;
+# Open webcam
+cap = cv2.VideoCapture(0)
+cap.set(3, 640)
+cap.set(4, 480)
 
-#define moi1 A0
-#define rain1 D5
-#define pump1 D0
+# model
+model = YOLO("yolo-Weights/yolov8n.pt")
 
-String readdata;
-
-String person = "person";
-int read1, i;
-
-int act1 = 0, act2 = 0, act3 = 0, act4 = 0, act5 = 0, sp;
-String data = "";
-
-char ssid[] = "IOT";
-char pass[] = "123456789";
-
-int moi, fire, ldr, rain;
-int humidity, temp;
-
-void setup() {
-  // put your setup code here, to run once:
-  Serial.begin(9600);
-  pinMode(moi1, INPUT);
-  pinMode(pump1, OUTPUT);
-  digitalWrite(pump1, HIGH);
-  dht.begin (  ) ;
-  lcd.begin(); // If you are using more I2C devices using the Wire library use lcd.begin(false)
-  lcd.backlight();
-  Blynk.begin(auth, ssid, pass, "blynk.cloud", 80);
-  lcd.clear();
-}
-
-void loop() {
-
-  humidity = dht.readHumidity ( ) ;
-  temp = dht.readTemperature ( ) ;
-
-  lcd.setCursor(0, 0);
-  lcd.print("T:");
-  if (temp <= 9) {
-    lcd.print("00");
-    lcd.print(temp);
-  }
-  else if (temp <= 99) {
-    lcd.print("0");
-    lcd.print(temp);
-  }
-  else if (temp <= 999) {
-    lcd.print("");
-    lcd.print(temp);
-  }
-
-  lcd.setCursor(7, 0);
-  lcd.print("H:");
-  if (humidity <= 9) {
-    lcd.print("00");
-    lcd.print(humidity );
-  }
-  else if (humidity <= 99) {
-    lcd.print("0");
-    lcd.print(humidity );
-  }
-  else if (humidity <= 999) {
-    lcd.print("");
-    lcd.print(humidity );
-  }
-  moi = analogRead(moi1);
-  moi = map(moi, 0, 1024, 100, 0);
-  if (moi < 10)
-  {
-    moi = 0;
-  }
-
-  delay(400);
-  lcd.setCursor(0, 1);
-  lcd.print("W:");
-  if (moi <= 9) {
-    lcd.print("00");
-    lcd.print(moi);
-  }
-  else if (moi <= 99) {
-    lcd.print("0");
-    lcd.print(moi);
-  }
-  else if (moi <= 999) {
-    lcd.print("");
-    lcd.print(moi);
-  }
-  rain = digitalRead(rain1);
+# object classes
+classNames = ["person", "bicycle", "car", "motorbike", "aeroplane", "bus", "train", "truck", "boat",
+              "traffic light", "fire hydrant", "stop sign", "parking meter", "bench", "bird", "cat",
+              "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra", "giraffe", "backpack", "umbrella",
+              "handbag", "tie", "suitcase", "frisbee", "skis", "snowboard", "sports ball", "kite", "baseball bat",
+              "baseball glove", "skateboard", "surfboard", "tennis racket", "bottle", "wine glass", "cup",
+              "fork", "knife", "spoon", "bowl", "banana", "apple", "sandwich", "orange", "broccoli",
+              "carrot", "hot dog", "pizza", "donut", "cake", "chair", "sofa", "pottedplant", "bed",
+              "diningtable", "toilet", "tvmonitor", "laptop", "mouse", "remote", "keyboard", "cell phone",
+              "microwave", "oven", "toaster", "sink", "refrigerator", "book", "clock", "vase", "scissors",
+              "teddy bear", "hair drier", "toothbrush"
+              ]
+#classNames = ["person","cat","dog", "horse", "sheep", "cow", "elephant", "bear", "zebra", "giraffe",]
 
 
-  if (moi > 60)
-  {
-    Blynk.virtualWrite(V4, "WATER LEVEL HIGH");
-    Blynk.logEvent("msg", "WATER LEVEL HIGH");
-    lcd.setCursor(0, 0);
-    lcd.print("WATER LEVEL         "); // You can make spaces using well... spaces
-    lcd.setCursor(0, 1); // Or setting the cursor in the desired position.
-    lcd.print("HIGH             ");
-    delay(2000);
-    lcd.clear();
-  }
-  else if (moi > 11 && moi < 30)
-  {
-    Blynk.virtualWrite(V4, "WATER LEVEL LOW");
-    Blynk.logEvent("msg", "WATER LEVEL LOW");
-    lcd.setCursor(0, 0);
-    lcd.print("WATER LEVEL         "); // You can make spaces using well... spaces
-    lcd.setCursor(0, 1); // Or setting the cursor in the desired position.
-    lcd.print("LOW             ");
-    delay(2000);
-    lcd.clear();
-  }
-  else if (rain == 1)
-  {
-    Blynk.virtualWrite(V4, "RAIN DETECTED");
-    Blynk.logEvent("msg", "RAIN DETECTED");
-    lcd.setCursor(0, 0);
-    lcd.print("RAIN         "); // You can make spaces using well... spaces
-    lcd.setCursor(0, 1); // Or setting the cursor in the desired position.
-    lcd.print("DETECTED             ");
-    delay(2000);
-    lcd.clear();
-  }
-  else
-  {
-    Blynk.virtualWrite(V4, "                    ");
-  }
-  Blynk.virtualWrite(V2, "W: " + String(moi) + "T: " + String(temp) + "H: " + String(humidity));
-  Blynk.run();
-}
-BLYNK_WRITE(V3)
-{
-  int button = param.asInt(); // read button
-  if (button == 1)
-  {
-    digitalWrite(pump1, LOW);
-  }
-  else
-  {
-    digitalWrite(pump1, HIGH);
-  }
-}
-BLYNK_WRITE(V1)
-{
-  String button = param.asString(); // read button
+try:
+    while True:
+        success, img = cap.read()
+        results = model(img, stream=True)
+        # coordinates
+        for r in results:
+            boxes = r.boxes
+            for box in boxes:
+                # bounding box
+                x1, y1, x2, y2 = box.xyxy[0]
+                x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2) # convert to int values
+                # put box in cam
+                cv2.rectangle(img, (x1, y1), (x2, y2), (255, 0, 255), 3)
 
-  readdata = button;
-  for (i = 0; readdata[i] != '\0'; i++)
-  {
-    if (readdata[i] == person[i]) {
-      act1 = 1;
-    }
-    else {
-      act1 = 0;
-      break;
-    
-    }
+                # confidence
+                confidence = math.ceil((box.conf[0]*100))/100
+                print("Confidence --->",confidence)
 
-  }
+                # class name
+                cls = int(box.cls[0])
+                print("Class name -->", classNames[cls])
 
-  if (act1 == 1)
-  {
-    Blynk.virtualWrite(V0, "                  ");
-  }
-  else
-  {
+                if classNames[cls]=="elephant":
+                    update_data_to_blynk(classNames[cls])
+                elif classNames[cls]=="bear":
+                    update_data_to_blynk(classNames[cls])
+                elif classNames[cls]=="giraffe":
+                    update_data_to_blynk(classNames[cls])
+                elif classNames[cls]=="horse":
+                    update_data_to_blynk(classNames[cls])
+                elif classNames[cls]=="person":
+                    update_data_to_blynk(classNames[cls])    
+
+                    
+                # object details
+                org = [x1, y1]
+                font = cv2.FONT_HERSHEY_SIMPLEX
+                fontScale = 1
+                color = (255, 0, 0)
+                thickness = 2
+
+                #gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                faces = face_cascade.detectMultiScale(img, scaleFactor=1.3, minNeighbors=5)
+
+                if len(faces) > 0:
+                    cv2.putText(img, classNames[cls], org, font, fontScale, color, thickness)
+                    #update_data_to_blynk(classNames[cls])
+                    
+
+                                
+                    
 
 
-    Serial.println(readdata);
-    delay(500);
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print(readdata); // You can make spaces using well... spaces
-
-    Blynk.logEvent("msg", readdata);
-    Blynk.virtualWrite(V4, readdata);
-    Blynk.logEvent("msg", readdata);
-    delay(5000);
-    Blynk.virtualWrite(V4, "                   ");
-    lcd.setCursor(0, 0);
-    lcd.print("                              ");
-    lcd.setCursor(0, 1);
-    lcd.print("                              ");
-  }
-}
+        cv2.imshow('Webcam', img)
+        if cv2.waitKey(1) == ord('q'):
+            break
+except KeyboardInterrupt:
+    cap.release()
+    src.close()
+    cv2.destroyAllWindows()
