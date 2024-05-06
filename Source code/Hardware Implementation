@@ -1,0 +1,206 @@
+//e2637iot@awgarstone.com
+//Info@2024
+
+#define BLYNK_TEMPLATE_ID "TMPL3CZk8Eegs"
+#define BLYNK_TEMPLATE_NAME "ANIMAL DETECTED"
+#define BLYNK_AUTH_TOKEN "vB-UzWHaX7ttbrx_xSEbc2_lT_KK6l4f"
+
+char auth[] = BLYNK_AUTH_TOKEN;
+
+#define BLYNK_PRINT Serial
+#include <ESP8266WiFi.h>
+#include <BlynkSimpleEsp8266.h>
+
+#include <LCD_I2C.h>
+LCD_I2C lcd(0x3F);
+
+#include "DHT.h"    // including the library of DHT11 temperature and humidity sensor
+#define DHTPIN D7 // Selecting the pin at which we have connected DHT11
+#define DHTTYPE DHT11 // Selecting the type of DHT sensors
+DHT dht ( DHTPIN, DHTTYPE ) ;
+
+#define moi1 A0
+#define rain1 D5
+#define pump1 D0
+
+String readdata;
+
+String person = "person";
+int read1, i;
+
+int act1 = 0, act2 = 0, act3 = 0, act4 = 0, act5 = 0, sp;
+String data = "";
+
+char ssid[] = "IOT";
+char pass[] = "123456789";
+
+int moi, fire, ldr, rain;
+int humidity, temp;
+
+void setup() {
+  // put your setup code here, to run once:
+  Serial.begin(9600);
+  pinMode(moi1, INPUT);
+  pinMode(pump1, OUTPUT);
+  digitalWrite(pump1, HIGH);
+  dht.begin (  ) ;
+  lcd.begin(); // If you are using more I2C devices using the Wire library use lcd.begin(false)
+  lcd.backlight();
+  Blynk.begin(auth, ssid, pass, "blynk.cloud", 80);
+  lcd.clear();
+}
+
+void loop() {
+
+  humidity = dht.readHumidity ( ) ;
+  temp = dht.readTemperature ( ) ;
+
+  lcd.setCursor(0, 0);
+  lcd.print("T:");
+  if (temp <= 9) {
+    lcd.print("00");
+    lcd.print(temp);
+  }
+  else if (temp <= 99) {
+    lcd.print("0");
+    lcd.print(temp);
+  }
+  else if (temp <= 999) {
+    lcd.print("");
+    lcd.print(temp);
+  }
+
+  lcd.setCursor(7, 0);
+  lcd.print("H:");
+  if (humidity <= 9) {
+    lcd.print("00");
+    lcd.print(humidity );
+  }
+  else if (humidity <= 99) {
+    lcd.print("0");
+    lcd.print(humidity );
+  }
+  else if (humidity <= 999) {
+    lcd.print("");
+    lcd.print(humidity );
+  }
+  moi = analogRead(moi1);
+  moi = map(moi, 0, 1024, 100, 0);
+  if (moi < 10)
+  {
+    moi = 0;
+  }
+
+  delay(400);
+  lcd.setCursor(0, 1);
+  lcd.print("W:");
+  if (moi <= 9) {
+    lcd.print("00");
+    lcd.print(moi);
+  }
+  else if (moi <= 99) {
+    lcd.print("0");
+    lcd.print(moi);
+  }
+  else if (moi <= 999) {
+    lcd.print("");
+    lcd.print(moi);
+  }
+  rain = digitalRead(rain1);
+
+
+  if (moi > 60)
+  {
+    Blynk.virtualWrite(V4, "WATER LEVEL HIGH");
+    Blynk.logEvent("msg", "WATER LEVEL HIGH");
+    lcd.setCursor(0, 0);
+    lcd.print("WATER LEVEL         "); // You can make spaces using well... spaces
+    lcd.setCursor(0, 1); // Or setting the cursor in the desired position.
+    lcd.print("HIGH             ");
+    delay(2000);
+    lcd.clear();
+  }
+  else if (moi > 11 && moi < 30)
+  {
+    Blynk.virtualWrite(V4, "WATER LEVEL LOW");
+    Blynk.logEvent("msg", "WATER LEVEL LOW");
+    lcd.setCursor(0, 0);
+    lcd.print("WATER LEVEL         "); // You can make spaces using well... spaces
+    lcd.setCursor(0, 1); // Or setting the cursor in the desired position.
+    lcd.print("LOW             ");
+    delay(2000);
+    lcd.clear();
+  }
+  else if (rain == 1)
+  {
+    Blynk.virtualWrite(V4, "RAIN DETECTED");
+    Blynk.logEvent("msg", "RAIN DETECTED");
+    lcd.setCursor(0, 0);
+    lcd.print("RAIN         "); // You can make spaces using well... spaces
+    lcd.setCursor(0, 1); // Or setting the cursor in the desired position.
+    lcd.print("DETECTED             ");
+    delay(2000);
+    lcd.clear();
+  }
+  else
+  {
+    Blynk.virtualWrite(V4, "                    ");
+  }
+  Blynk.virtualWrite(V2, "W: " + String(moi) + "T: " + String(temp) + "H: " + String(humidity));
+  Blynk.run();
+}
+BLYNK_WRITE(V3)
+{
+  int button = param.asInt(); // read button
+  if (button == 1)
+  {
+    digitalWrite(pump1, LOW);
+  }
+  else
+  {
+    digitalWrite(pump1, HIGH);
+  }
+}
+BLYNK_WRITE(V1)
+{
+  String button = param.asString(); // read button
+
+  readdata = button;
+  for (i = 0; readdata[i] != '\0'; i++)
+  {
+    if (readdata[i] == person[i]) {
+      act1 = 1;
+    }
+    else {
+      act1 = 0;
+      break;
+    
+    }
+
+  }
+
+  if (act1 == 1)
+  {
+    Blynk.virtualWrite(V0, "                  ");
+  }
+  else
+  {
+
+
+    Serial.println(readdata);
+    delay(500);
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print(readdata); // You can make spaces using well... spaces
+
+    Blynk.logEvent("msg", readdata);
+    Blynk.virtualWrite(V4, readdata);
+    Blynk.logEvent("msg", readdata);
+    delay(5000);
+    Blynk.virtualWrite(V4, "                   ");
+    lcd.setCursor(0, 0);
+    lcd.print("                              ");
+    lcd.setCursor(0, 1);
+    lcd.print("                              ");
+  }
+}
